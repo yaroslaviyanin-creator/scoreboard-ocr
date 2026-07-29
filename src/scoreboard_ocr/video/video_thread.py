@@ -1,11 +1,12 @@
 """Video capture thread — reads frames from a camera using OpenCV."""
 
 import logging
+import os
 import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from ..platform_utils import capture_backend
+from ..platform_utils import capture_backend, is_macos
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,12 @@ class VideoThread(QThread):
     def run(self) -> None:
         self._run_flag = True
         backend = capture_backend()
+
+        # macOS .app bundle: Info.plist has NSCameraUsageDescription,
+        # so the system prompt works correctly. Do NOT skip auth.
+        # When running from terminal (dev), unset the var so it can request.
+        if is_macos():
+            os.environ.pop("OPENCV_AVFOUNDATION_SKIP_AUTH", None)
 
         logger.info(
             "Opening camera index=%d with backend=%s",

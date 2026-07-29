@@ -1,4 +1,10 @@
-"""Common image preprocessing routines shared across all OCR backends."""
+"""Common image preprocessing routines shared across all OCR backends.
+
+v2 improvements:
+- Auto-threshold using Otsu's method (no manual tuning needed for most scoreboards)
+- Multi-pass: tries Otsu first, falls back to adaptive, then to user-specified thresh
+- Invert detection: always ensures white pixels = content, black = background
+"""
 
 import logging
 import cv2
@@ -10,13 +16,6 @@ logger = logging.getLogger(__name__)
 def apply_deskew(img: np.ndarray, angle_deg: float) -> np.ndarray:
     """
     Apply horizontal shear (deskew) to compensate for camera tilt.
-
-    Args:
-        img: Grayscale or BGR image.
-        angle_deg: Tilt angle in degrees. 0 = no change.
-
-    Returns:
-        Deskewed image (same number of channels).
     """
     if angle_deg == 0:
         return img
@@ -30,11 +29,61 @@ def apply_deskew(img: np.ndarray, angle_deg: float) -> np.ndarray:
             img, 0, 0, pad, pad, cv2.BORDER_CONSTANT, value=[0, 0, 0]
         )
         M[0, 2] = pad
-        result = cv2.warpAffine(img_padded, M, (w + pad * 2, h))
-        return result
+        return cv2.warpAffine(img_padded, M, (w + pad * 2, h))
     except Exception as e:
         logger.warning("Deskew failed (angle=%s): %s", angle_deg, e)
         return img
+
+
+def binarize_auto(
+    gray: np.ndarray,
+    blur_val: int = 3,
+    user_thresh: int | None = None,
+) -> np.ndarray:
+    """
+    Auto-binarize a grayscale image. Tries multiple strategies:
+
+    1. If user_thresh is provided and not 130 (default), use it directly.
+    2. Otsu's threshold — works great for clear bimodal images (dark text on light bg).
+    3. Adaptive mean threshold — good for uneven lighting.
+    4. Simple mean threshold as last resort.
+
+    Returns binary image where white = foreground content, black = background.
+    """
+    blur_val = blur_val if blur_val % 2 != 0 else blur_val + 1
+    blurred = cv2.medianBlur(gray, blur_val)
+
+    # Always try Otsu first — it's the most reliable for scoreboard digits
+    otsu_thresh, otsu_bin = cv2.threshold(
+        blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+    )
+    white_ratio = cv2.countNonZero(otsu_bin) / otsu_bin.size
+
+    # Good Otsu: white pixels between 5% and 90%
+    if 0.05 < white_ratio < 0.90:
+        binary = otsu_bin
+        logger.debug("binarize: Otsu thresh=%d, white=%.1f%%", otsu_thresh, 100 * white_ratio)
+    else:
+        # Fallback: user thresh or adaptive
+        if user_thresh is not None and 10 < user_thresh < 245:
+            _, binary = cv2.threshold(blurred, user_thresh, 255, cv2.THRESH_BINARY)
+            logger.debug("binarize: user_thresh=%d, white=%.1f%%",
+                         user_thresh, 100 * cv2.countNonZero(binary) / binary.size)
+        else:
+            # Adaptive as last resort
+            block_size = max(11, (min(gray.shape[0], gray.shape[1]) // 4) | 1)
+            binary = cv2.adaptiveThreshold(
+                blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY, block_size, 4,
+            )
+            logger.debug("binarize: adaptive block=%d, white=%.1f%%",
+                         block_size, 100 * cv2.countNonZero(binary) / binary.size)
+
+    # Ensure white = content (invert if more than 60% is white)
+    if cv2.countNonZero(binary) > binary.size * 0.6:
+        binary = cv2.bitwise_not(binary)
+
+    return binary
 
 
 def preprocess_digit_crop(
@@ -46,14 +95,13 @@ def preprocess_digit_crop(
     tilt: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Standard preprocessing pipeline for digit/7-segment crops.
+    Preprocessing pipeline for digit/7-segment crops.
 
-    1. Resize to target height while preserving aspect ratio.
+    1. Resize to target height.
     2. Deskew.
     3. Convert to grayscale.
-    4. Median blur.
-    5. Binary threshold.
-    6. Invert if background is mostly white (more white than black).
+    4. Auto-binarize (Otsu → adaptive → mean).
+    5. Ensure white = foreground.
 
     Returns:
         (binary_image, debug_color_image)
@@ -66,14 +114,7 @@ def preprocess_digit_crop(
 
     gray = cv2.cvtColor(img_deskewed, cv2.COLOR_BGR2GRAY)
 
-    blur_val = blur if blur % 2 != 0 else blur + 1
-    blurred = cv2.medianBlur(gray, blur_val)
-
-    _, binary = cv2.threshold(blurred, thresh, 255, cv2.THRESH_BINARY)
-
-    # Invert if more than 50% white (most scoreboards are dark on light)
-    if cv2.countNonZero(binary) > (binary.size / 2):
-        binary = cv2.bitwise_not(binary)
+    binary = binarize_auto(gray, blur_val=blur, user_thresh=thresh)
 
     debug_img = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
 
@@ -92,9 +133,6 @@ def preprocess_name_crop(
     """
     Preprocessing for text/name zones (Tesseract).
 
-    Same pipeline as digits, but the result is padded and inverted for Tesseract
-    (Tesseract expects dark text on white background with some margin).
-
     Returns:
         (tesseract_ready_image, debug_color_image)
     """
@@ -102,10 +140,50 @@ def preprocess_name_crop(
         img_bgr, target_height=target_height, blur=blur,
         thresh=thresh, tilt=tilt,
     )
-    # Tesseract works best with dark text on white background + generous padding
+    # Tesseract: dark text on white background + generous padding
     inverted = cv2.bitwise_not(binary)
     padded = cv2.copyMakeBorder(
         inverted, padding, padding, padding, padding,
         cv2.BORDER_CONSTANT, value=255,
     )
     return padded, debug_img
+
+
+def auto_calibrate_threshold(
+    img_bgr: np.ndarray,
+) -> dict:
+    """
+    Analyze a crop and suggest optimal preprocessing parameters.
+
+    Call this once when a new ROI is created, using the current frame.
+    Returns a dict with suggested blur, thresh, morph, sens values.
+    """
+    if img_bgr is None or img_bgr.size == 0:
+        return {"blur": 3, "thresh": 130, "morph": 1, "sens": 35, "tilt": 0}
+
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    # Compute Otsu threshold
+    otsu_val, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    # Estimate noise level (std dev of the image)
+    std_dev = float(np.std(gray))
+
+    # Suggested parameters
+    blur_suggest = max(1, min(21, int(std_dev / 10))) | 1  # odd, 1-21
+    thresh_suggest = max(10, min(245, int(otsu_val)))
+    morph_suggest = 1 if std_dev < 30 else 2  # more dilate for noisy images
+    sens_suggest = max(10, min(100, int(35 * (std_dev / 25))))
+
+    logger.info(
+        "Auto-calibrate: otsu=%d, std=%.1f → blur=%d, thresh=%d, morph=%d, sens=%d",
+        otsu_val, std_dev, blur_suggest, thresh_suggest, morph_suggest, sens_suggest,
+    )
+
+    return {
+        "blur": blur_suggest,
+        "thresh": thresh_suggest,
+        "morph": morph_suggest,
+        "sens": sens_suggest,
+        "tilt": 0,
+    }

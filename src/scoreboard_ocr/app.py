@@ -1,11 +1,15 @@
-"""Application entry point — creates QApplication and launches MainWindow."""
+"""Application entry point — creates QApplication and launches MainWindow.
+
+Uses absolute imports so it works both as `python -m scoreboard_ocr.app`
+and as a PyInstaller entry point (where it runs as __main__).
+"""
 
 import sys
 import logging
 from PyQt6.QtWidgets import QApplication
 
-from .logging_setup import setup_logging
-from .ui.main_window import MainWindow
+from scoreboard_ocr.logging_setup import setup_logging
+from scoreboard_ocr.ui.main_window import MainWindow
 
 logger = logging.getLogger(__name__)
 
