@@ -1,6 +1,6 @@
 """TrOCR backend — Microsoft's Transformer-based OCR (tiny, accurate, no preprocessing).
 
-Name mode → EasyOCR (ru+en, handles mixed Cyrillic/Latin text).
+Name mode → Tesseract rus+eng (battle-tested for text with preprocessing).
 Standard/Time → TrOCR digit recognition (fast, lightweight).
 """
 
@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 _MODEL_NAME = "microsoft/trocr-small-printed"
 _processor = None
 _model = None
-_easyocr_reader = None
 
 
 def _init_model():
@@ -28,26 +27,17 @@ def _init_model():
         logger.info("TrOCR model loaded (61M params)")
 
 
-def _get_easyocr():
-    global _easyocr_reader
-    if _easyocr_reader is None:
-        logger.info("Loading EasyOCR reader for ru+en name recognition...")
-        import easyocr
-        _easyocr_reader = easyocr.Reader(['ru', 'en'], gpu=False)
-        logger.info("EasyOCR reader ready")
-    return _easyocr_reader
-
-
 class TrOCRRecognizer(Recognizer):
-    """TrOCR — Microsoft's Transformer OCR for digits. Name mode → EasyOCR ru+en."""
+    """TrOCR — Microsoft's Transformer OCR for digits. Name mode → Tesseract rus+eng."""
 
     def __init__(self):
         _init_model()
 
     def recognize(self, crop: np.ndarray, mode: str, params: dict) -> RecognitionResult:
-        # Name mode → EasyOCR ru+en (handles mixed Cyrillic/Latin text)
+        # Name mode → Tesseract rus+eng (battle-tested for text recognition)
         if mode == "Name":
-            return self._recognize_name_easyocr(crop)
+            from .tesseract_backend import TesseractRecognizer
+            return TesseractRecognizer().recognize(crop, mode, params)
 
         # Standard / Time / 7-segment → TrOCR (light, fast)
         try:
@@ -55,18 +45,6 @@ class TrOCRRecognizer(Recognizer):
             return self._recognize_digits(raw_text, crop, mode)
         except Exception as e:
             logger.exception("TrOCR failed (mode=%s): %s", mode, e)
-            return RecognitionResult(text="", debug_image=crop)
-
-    def _recognize_name_easyocr(self, crop: np.ndarray) -> RecognitionResult:
-        """EasyOCR ru+en — handles mixed Cyrillic/Latin text natively."""
-        try:
-            reader = _get_easyocr()
-            rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            results = reader.readtext(rgb, detail=0)
-            text = " ".join(results).strip()
-            return RecognitionResult(text=text, debug_image=self._debug_img(crop, text))
-        except Exception as e:
-            logger.exception("EasyOCR name recognition failed: %s", e)
             return RecognitionResult(text="", debug_image=crop)
 
     def _recognize_digits(self, raw_text: str, crop: np.ndarray, mode: str) -> RecognitionResult:

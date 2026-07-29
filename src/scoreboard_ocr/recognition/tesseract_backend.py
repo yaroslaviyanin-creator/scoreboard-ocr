@@ -64,23 +64,72 @@ class TesseractRecognizer(Recognizer):
         return RecognitionResult(text=digit, debug_image=debug_img)
 
     def _recognize_name(self, crop: np.ndarray, params: dict) -> RecognitionResult:
-        """Recognize text via Tesseract with rus+eng language (PSM 7)."""
-        padded, debug_img = preprocess_name_crop(
-            crop,
-            blur=params.get("blur", 3),
-            thresh=params.get("thresh", 130),
-            tilt=params.get("tilt", 0),
+        """Recognize text via Tesseract with rus+eng language.
+
+        Uses multiple preprocessing passes: Otsu binarization, adaptive threshold,
+        and raw grayscale — takes the best (non-empty) result.
+        """
+        # Upscale small crops for better Tesseract accuracy
+        h, w = crop.shape[:2]
+        scale = max(1.0, 60.0 / h)  # at least ~60px height
+        if scale > 1.0:
+            crop = cv2.resize(crop, (int(w * scale), int(h * scale)))
+
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+        # Try multiple binarization strategies, pick best result
+        candidates = []
+
+        # Strategy 1: Otsu (works great for bimodal images)
+        blur1 = cv2.medianBlur(gray, max(3, (gray.shape[0] // 20) | 1))
+        _, otsu = cv2.threshold(blur1, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        white_pct = cv2.countNonZero(otsu) / otsu.size
+        if 0.05 < white_pct < 0.90:
+            candidates.append(("otsu", cv2.copyMakeBorder(
+                cv2.bitwise_not(otsu), 20, 20, 20, 20,
+                cv2.BORDER_CONSTANT, value=255,
+            )))
+
+        # Strategy 2: Adaptive threshold
+        block = max(11, (min(gray.shape[0], gray.shape[1]) // 4) | 1)
+        adapt = cv2.adaptiveThreshold(
+            cv2.medianBlur(gray, 3), 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block, 4,
         )
-        try:
-            text = pytesseract.image_to_string(
-                padded,
-                lang="rus+eng",
-                config="--psm 7",
-            ).strip()
-        except pytesseract.TesseractError:
-            logger.warning("Tesseract rus+eng failed, falling back to eng only")
-            text = pytesseract.image_to_string(
-                padded,
-                config="--psm 7",
-            ).strip()
-        return RecognitionResult(text=text, debug_image=debug_img)
+        candidates.append(("adaptive", cv2.copyMakeBorder(
+            cv2.bitwise_not(adapt), 20, 20, 20, 20,
+            cv2.BORDER_CONSTANT, value=255,
+        )))
+
+        # Strategy 3: Raw grayscale (sometimes Tesseract handles it best)
+        gray_padded = cv2.copyMakeBorder(
+            gray, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255,
+        )
+        candidates.append(("gray", gray_padded))
+
+        # Try each and pick the best (longest result, ignoring garbage)
+        best_text = ""
+        debug_img = cv2.cvtColor(otsu if 'otsu' in [c[0] for c in candidates] else gray, cv2.COLOR_GRAY2BGR)
+
+        for name, img in candidates:
+            try:
+                text = pytesseract.image_to_string(
+                    img,
+                    lang="rus+eng",
+                    config="--psm 7",
+                ).strip()
+            except pytesseract.TesseractError:
+                try:
+                    text = pytesseract.image_to_string(
+                        img, config="--psm 7",
+                    ).strip()
+                except Exception:
+                    continue
+
+            # Prefer longer results (more confident)
+            if len(text) > len(best_text):
+                best_text = text
+                debug_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                logger.debug("Name via %s: %r", name, text)
+
+        return RecognitionResult(text=best_text, debug_image=debug_img)
