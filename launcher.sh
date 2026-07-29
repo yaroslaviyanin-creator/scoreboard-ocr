@@ -1,18 +1,18 @@
 #!/bin/bash
 # Scoreboard OCR Tracker — launcher script (macOS)
-# Uses the bundled .venv with all dependencies (EasyOCR, PyQt6, etc.)
+# Launch from project root with PaddleOCR backend
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV="${SCRIPT_DIR}/../.venv"
+PROJECT_DIR="$SCRIPT_DIR"
+VENV="${PROJECT_DIR}/.venv"
 
 if [ ! -d "$VENV" ]; then
-    osascript -e 'display dialog "Virtual environment not found at '"$VENV"'. Please run setup first." buttons {"OK"} default button "OK" with icon stop'
+    echo "ERROR: Virtual environment not found at $VENV"
+    echo "Run: cd $PROJECT_DIR && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
     exit 1
 fi
 
-export PATH="${VENV}/bin:$PATH"
-export PYTHONPATH="${SCRIPT_DIR}/../src:${PYTHONPATH}"
-
+export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH}"
 exec "${VENV}/bin/python" -m scoreboard_ocr.app
