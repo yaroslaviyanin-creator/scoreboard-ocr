@@ -36,11 +36,16 @@ def get_video_inputs() -> list[CameraInfo]:
         return devices
 
     for idx, device in enumerate(qt_cams):
-        desc = device.description()
+        try:
+            desc = device.description()
+        except Exception:
+            desc = f"Camera {idx}"
+        # Use ASCII-safe description to avoid encoding issues in PyQt6
+        safe_desc = desc.encode("ascii", errors="replace").decode("ascii")
         device_id = device.id() if hasattr(device, "id") else ""
-        cam = CameraInfo(index=idx, description=desc, device_id=device_id)
+        cam = CameraInfo(index=idx, description=safe_desc, device_id=device_id)
         devices.append(cam)
-        logger.debug("Camera[%d]: %s (id=%s)", idx, desc, device_id)
+        logger.debug("Camera[%d]: %s (id=%s)", idx, safe_desc, device_id)
 
     logger.info("Found %d camera(s) via QMediaDevices", len(devices))
     return devices

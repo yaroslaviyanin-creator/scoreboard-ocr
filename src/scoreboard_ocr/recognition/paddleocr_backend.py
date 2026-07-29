@@ -58,7 +58,7 @@ class PaddleOCRRecognizer(Recognizer):
             return RecognitionResult(text="", debug_image=img)
 
         if mode == "Time":
-            digits = self._format_time(digits)
+            digits = self._format_time(digits[::-1])  # Reverse: PaddleOCR reads right→left
 
         debug_img = img.copy()
         cv2.putText(debug_img, digits, (5, 25),

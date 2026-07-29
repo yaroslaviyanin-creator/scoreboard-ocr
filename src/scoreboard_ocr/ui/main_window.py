@@ -177,6 +177,11 @@ class MainWindow(QMainWindow):
         if not self.is_camera_running:
             idx = self.cam_sel.currentData()
             if idx is not None:
+                # Create fresh thread and try to open camera
+                self.vid_thread.stop()
+                self.vid_thread.change_pixmap_signal.disconnect()
+                self.vid_thread = VideoThread(parent=self)
+                self.vid_thread.change_pixmap_signal.connect(self.update_image)
                 self.vid_thread.camera_index = idx
                 self.vid_thread.start()
                 self.btn_start.setText("Stop")

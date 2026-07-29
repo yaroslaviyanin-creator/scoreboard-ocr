@@ -1,0 +1,64 @@
+{
+    "version": 2,
+    "output_folder": "",
+    "rois": [
+        {
+            "name": "Zone_727",
+            "pos": [
+                517.0,
+                800.0
+            ],
+            "size": [
+                321.0,
+                92.0
+            ],
+            "mode": "Time",
+            "params": {
+                "blur": 5,
+                "thresh": 130,
+                "morph": 1,
+                "sens": 35,
+                "tilt": 0
+            }
+        },
+        {
+            "name": "Zone_716",
+            "pos": [
+                473.0,
+                383.0
+            ],
+            "size": [
+                186.0,
+                81.0
+            ],
+            "mode": "Standard",
+            "params": {
+                "blur": 5,
+                "thresh": 130,
+                "morph": 1,
+                "sens": 35,
+                "tilt": 0
+            }
+        },
+        {
+            "name": "Zone_686",
+            "pos": [
+                716.0,
+                379.0
+            ],
+            "size": [
+                210.0,
+                94.0
+            ],
+            "mode": "Standard",
+            "params": {
+                "blur": 5,
+                "thresh": 130,
+                "morph": 1,
+                "sens": 35,
+                "tilt": 0
+            }
+        }
+    ],
+    "templates": {}
+}
