@@ -1,152 +1,155 @@
 @echo off
-title Scoreboard OCR Tracker — Installation
+title Scoreboard OCR Tracker v2 - Installer
 setlocal enabledelayedexpansion
 
 echo ==========================================================
-echo   Scoreboard OCR Tracker v2  -  Windows Installer
+echo   Scoreboard OCR Tracker v2 - Windows Installer
 echo ==========================================================
 echo.
-
-:: Force the window to stay open no matter what
-if not defined STAY_OPEN (
-    set "STAY_OPEN=1"
-    start "" /WAIT cmd /c "%~f0" %*
-    exit /b
-)
-
-echo   This script will automatically install everything.
-echo   Total: ~2 GB download, 5-15 minutes.
+echo   Installing to: %USERPROFILE%\ScoreboardOCR
 echo.
-echo   Press any key to begin...
+echo   Press any key to start...
 pause >nul
+
+set "DIR=%USERPROFILE%\ScoreboardOCR"
+
+:: ==========================================================
+:: STEP 1: Check Python
+:: ==========================================================
 echo.
+echo [1/4] Checking Python...
+set "PYTHON="
 
-:: ==========================================================
-:: STEP 1 — PYTHON
-:: ==========================================================
-echo [1/4] Python...
-set "PY="
-
-:: Try PATH
-python --version >nul 2>&1 && set "PY=python" && goto :py_ok
-py -3 --version >nul 2>&1 && set "PY=py -3" && goto :py_ok
-
-:: Try known folders
+:: Try common locations first (skip Microsoft Store stub)
 for %%d in (
     "%LocalAppData%\Programs\Python\Python312"
     "%LocalAppData%\Programs\Python\Python311"
     "%ProgramFiles%\Python312"
     "C:\Python312"
 ) do (
-    if exist "%%d\python.exe" (set "PY=%%d\python.exe" && goto :py_ok)
+    if exist "%%d\python.exe" (
+        "%%d\python.exe" --version >nul 2>&1
+        if !errorlevel! equ 0 set "PYTHON=%%d\python.exe"
+    )
 )
 
-echo   Python not found, downloading...
-echo   This window will stay open during download.
-powershell -NoProfile -Command ^
-  "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;^
-   Write-Host '  Downloading Python 3.12...';^
-   Invoke-WebRequest -UseBasicParsing -Uri 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe' -OutFile '$env:TEMP\py312.exe'"
-if errorlevel 1 goto :die
+if defined PYTHON goto :python_ok
 
-echo   Installing Python silently...
-"%TEMP%\py312.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0 >nul 2>&1
-set "PY=%LocalAppData%\Programs\Python\Python312\python.exe"
-if not exist "!PY!" set "PY=%ProgramFiles%\Python312\python.exe"
-echo   Python installed.
+:: Try PATH but verify it's real
+where python >nul 2>&1
+if !errorlevel! equ 0 (
+    for /f "delims=" %%i in ('where python 2^>nul') do (
+        echo %%i | findstr /i "WindowsApps" >nul
+        if !errorlevel! neq 0 set "PYTHON=%%i"
+    )
+)
 
-:py_ok
-!PY! --version
-if errorlevel 1 goto :die
-echo   OK
+if defined PYTHON goto :python_ok
+
+:: Install Python via winget if available
+echo   Python not found. Trying winget...
+where winget >nul 2>&1
+if !errorlevel! equ 0 (
+    echo   Running: winget install Python.Python.3.12
+    winget install Python.Python.3.12 --accept-source-agreements --accept-package-agreements
+    for %%d in (
+        "%LocalAppData%\Programs\Python\Python312"
+        "%ProgramFiles%\Python312"
+        "C:\Python312"
+    ) do (
+        if exist "%%d\python.exe" set "PYTHON=%%d\python.exe"
+    )
+    if defined PYTHON goto :python_ok
+)
+
+:: Download Python directly
+echo   Downloading Python 3.12...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe' -OutFile '$env:TEMP\python312.exe'" 2>nul
+if exist "%TEMP%\python312.exe" (
+    echo   Installing Python...
+    "%TEMP%\python312.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+    for %%d in (
+        "%LocalAppData%\Programs\Python\Python312"
+        "%ProgramFiles%\Python312"
+        "C:\Python312"
+    ) do (
+        if exist "%%d\python.exe" set "PYTHON=%%d\python.exe"
+    )
+)
+
+:python_ok
+if not defined PYTHON (
+    echo   ERROR: Cannot install Python. Please install manually from https://python.org
+    pause
+    exit /b 1
+)
+%PYTHON% --version
+set "PYTHON=%PYTHON:\=\\%"
+echo   OK: %PYTHON%
 echo.
 
 :: ==========================================================
-:: STEP 2 — SOURCE CODE
+:: STEP 2: Source code
 :: ==========================================================
 echo [2/4] Source code...
-set "DIR=%USERPROFILE%\ScoreboardOCR"
-if exist "%DIR%" rmdir /s /q "%DIR%" 2>nul
 
-:: Download as ZIP via PowerShell (works on any Windows 10+)
-powershell -NoProfile -Command ^
-  "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;^
-   Write-Host '  Downloading...';^
-   Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/yaroslaviyanin-creator/scoreboard-ocr/archive/refs/heads/main.zip' -OutFile '$env:TEMP\sbocr.zip';^
-   Write-Host '  Extracting...';^
-   Expand-Archive -Path '$env:TEMP\sbocr.zip' -DestinationPath '$env:TEMP\sbocr' -Force;^
-   Write-Host '  Copying files...'"
-if errorlevel 1 goto :die
-
-xcopy /E /I /Y "%TEMP%\sbocr\scoreboard-ocr-main\*" "%DIR%" >nul
-if not exist "%DIR%\install.bat" goto :die
+if exist "%DIR%\pyproject.toml" (
+    echo   Already downloaded, skipping...
+) else (
+    if exist "%DIR%" rmdir /s /q "%DIR%" 2>nul
+    echo   Downloading from GitHub...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri 'https://codeload.github.com/yaroslaviyanin-creator/scoreboard-ocr/zip/refs/heads/main' -OutFile '$env:TEMP\sbocr.zip'" 2>nul
+    if not exist "%TEMP%\sbocr.zip" (
+        echo   ERROR: Download failed. Check internet.
+        pause
+        exit /b 1
+    )
+    echo   Extracting...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '$env:TEMP\sbocr.zip' -DestinationPath '$env:TEMP\sbocr_extract' -Force" 2>nul
+    for /d %%d in ("%TEMP%\sbocr_extract\*") do xcopy /E /I /Y "%%d\*" "%DIR%" >nul
+)
 echo   OK
 echo.
 
 :: ==========================================================
-:: STEP 3 — PYTHON PACKAGES
+:: STEP 3: Python packages
 :: ==========================================================
-echo [3/4] Python packages...
+echo [3/4] Python packages (~1 GB, 5-10 min)...
+
 cd /d "%DIR%"
 if exist ".venv" rmdir /s /q ".venv" 2>nul
-!PY! -m venv .venv >nul 2>&1
-call .venv\Scripts\activate.bat >nul 2>&1
+%PYTHON% -m venv .venv
+call .venv\Scripts\activate.bat
 
+echo   Upgrading pip...
 python -m pip install --upgrade pip --quiet 2>nul
 
-echo   PyQt6...
-pip install PyQt6 --quiet 2>nul || echo   WARNING: PyQt6 failed
-echo   OpenCV + NumPy...
-pip install opencv-python numpy --quiet 2>nul || echo   WARNING: OpenCV failed
-echo   PaddleOCR (AI model, ~1 GB) — please wait...
-pip install paddlepaddle paddleocr --quiet 2>nul || echo   WARNING: PaddleOCR failed
-echo   Tesseract + platformdirs...
-pip install pytesseract platformdirs --quiet 2>nul || echo   WARNING: pytesseract failed
+echo   Installing packages...
+python -m pip install PyQt6 opencv-python numpy pytesseract platformdirs --quiet 2>nul
+echo   Installing PaddleOCR (AI model, ~1 GB)...
+python -m pip install paddlepaddle paddleocr --quiet 2>nul
 echo   OK
 echo.
 
 :: ==========================================================
-:: STEP 4 — LAUNCHER + SHORTCUT
+:: STEP 4: Launcher
 :: ==========================================================
-echo [4/4] Launcher...
+echo [4/4] Creating launcher...
 
-(
-echo @echo off
-echo cd /d "%DIR%"
-echo call .venv\Scripts\activate.bat
-echo python -m scoreboard_ocr.app
-echo if errorlevel 1 pause
-) > "%DIR%\run.bat"
+echo @echo off > "%DIR%\run.bat"
+echo cd /d "%DIR%" >> "%DIR%\run.bat"
+echo call .venv\Scripts\activate.bat >> "%DIR%\run.bat"
+echo python -m scoreboard_ocr.app >> "%DIR%\run.bat"
+echo if errorlevel 1 pause >> "%DIR%\run.bat"
 
-set "DSK=%USERPROFILE%\Desktop"
-if exist "%USERPROFILE%\OneDrive\Desktop" set "DSK=%USERPROFILE%\OneDrive\Desktop"
-powershell -NoProfile -Command ^
-  "$w=New-Object -ComObject WScript.Shell;^
-   $s=$w.CreateShortcut('%DSK%\ScoreboardOCR.lnk');^
-   $s.TargetPath='%SystemRoot%\System32\cmd.exe';^
-   $s.Arguments='/c \"\"%DIR%\run.bat\"\"';^
-   $s.WorkingDirectory='%DIR%';^
-   $ico='%DIR%\assets\icon.ico';^
-   if(Test-Path $ico){$s.IconLocation=$ico};^
-   $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%USERPROFILE%\Desktop\ScoreboardOCR.lnk'); $s.TargetPath='%SystemRoot%\System32\cmd.exe'; $s.Arguments='/c \"%DIR%\run.bat\"'; $s.WorkingDirectory='%DIR%'; $ico='%DIR%\assets\icon.ico'; if(Test-Path $ico){$s.IconLocation=$ico}; $s.Save()" 2>nul
+
 echo   OK
 echo.
-
-:: ==========================================================
 echo ==========================================================
-echo   DONE! Launch from Desktop: ScoreboardOCR
-echo   Or run: %DIR%\run.bat
+echo   INSTALLATION COMPLETE!
 echo ==========================================================
+echo   Launch: ScoreboardOCR on Desktop
+echo   Or: %DIR%\run.bat
 echo.
 pause
-exit /b 0
-
-:die
-echo.
-echo ==========================================================
-echo   ERROR — Installation failed.
-echo   Check your internet connection and try again.
-echo ==========================================================
-echo.
-pause
-exit /b 1
