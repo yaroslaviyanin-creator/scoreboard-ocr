@@ -18,7 +18,7 @@ from ..video import CameraInfo, get_video_inputs
 from ..video.video_thread import VideoThread
 from ..roi import ROIRect
 from ..recognition.worker import OCRWorker
-from ..recognition.paddleocr_backend import PaddleOCRRecognizer
+from ..recognition.trocr_backend import TrOCRRecognizer
 from ..presets import save_preset, load_preset, write_templates
 from ..output import write_value_atomic
 from .debug_panel import DebugPanel
@@ -53,8 +53,8 @@ class MainWindow(QMainWindow):
         self._init_ui()
 
         # --- OCR Worker ---
-        logger.info("Using PaddleOCR backend")
-        backend = PaddleOCRRecognizer()
+        logger.info("Using TrOCR backend (Microsoft Transformer OCR, 61M params)")
+        backend = TrOCRRecognizer()
         self.ocr_thread = OCRWorker(recognizer=backend, parent=self)
 
         self.ocr_thread.result_signal.connect(self.on_ocr_result)
@@ -269,6 +269,11 @@ class MainWindow(QMainWindow):
         if not fpath:
             return
 
+        # Pause OCR timer to prevent race condition with ROI scene manipulation
+        was_running = self.is_camera_running
+        self.timer.stop()
+        self.ocr_busy = True  # block send_to_ocr while timer is stopped
+
         try:
             data = load_preset(fpath)
 
@@ -314,6 +319,11 @@ class MainWindow(QMainWindow):
             logger.info("Preset loaded successfully: %d ROIs", len(data["rois"]))
         except Exception as e:
             logger.exception("Failed to load preset: %s", e)
+        finally:
+            # Resume OCR timer regardless of success or failure
+            self.ocr_busy = False
+            if was_running:
+                self.timer.start(250)
 
     # ------------------------------------------------------------------
     # Output folder
