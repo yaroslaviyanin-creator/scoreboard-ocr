@@ -64,12 +64,22 @@ class TesseractRecognizer(Recognizer):
         return RecognitionResult(text=digit, debug_image=debug_img)
 
     def _recognize_name(self, crop: np.ndarray, params: dict) -> RecognitionResult:
-        """Recognize text via Tesseract with rus+eng language (PSM 7)."""
+        """Recognize text via Tesseract with rus+eng language (PSM 7).
+
+        Uses ALL user-adjustable parameters from ROI settings:
+          blur (1-21)  — median blur to remove noise
+          thresh (0-255) — binarization threshold
+          morph (0-10) — morphological dilation (fattens text)
+          sens (5-100) — sensitivity, adjusts threshold proportionally
+          tilt (-45..45) — deskew angle
+        """
         padded, debug_img = preprocess_name_crop(
             crop,
             blur=params.get("blur", 3),
             thresh=params.get("thresh", 130),
             tilt=params.get("tilt", 0),
+            morph=params.get("morph", 1),
+            sens=params.get("sens", 35),
         )
         try:
             text = pytesseract.image_to_string(
