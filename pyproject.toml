@@ -1,0 +1,56 @@
+[project]
+name = "scoreboard-ocr"
+version = "2.0.0"
+description = "Cross-platform scoreboard OCR tracker for sports broadcasting"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "YY-tracker team" }
+]
+keywords = ["ocr", "scoreboard", "sports", "broadcasting", "opencv", "tesseract"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video :: Capture",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+dependencies = [
+    "PyQt6>=6.6.0",
+    "opencv-python>=4.9.0",
+    "numpy>=1.26.0",
+    "pytesseract>=0.3.10",
+    "platformdirs>=4.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-qt>=4.4.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+scoreboard-ocr = "scoreboard_ocr.app:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --tb=short"
+
+[tool.pyinstaller]
+# Shared settings; platform-specific overrides in build/*.spec
+noconfirm = true

@@ -1,0 +1,49 @@
+# https://docs.python.org/3.11/library/venv.html
+venv/
+.venv/
+env/
+.env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+.spec
+*.manifest
+*.exe
+*.dll
+*.so
+*.dylib
+
+# macOS
+.DS_Store
+*.app
+__pycache__/
+
+# Python
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.tox/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+
+# Project
+Tesseract-OCR/
+templates/*.png
+!templates/.gitkeep
+
+# Logs
+*.log

@@ -1,0 +1,92 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install Tesseract (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tesseract
+
+      - name: Install Tesseract (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install tesseract --no-progress
+          echo "C:\Program Files\Tesseract-OCR" >> $env:GITHUB_PATH
+
+      - name: Run tests
+        run: python -m pytest -v --tb=short
+
+  # -------------------------------------------------------------------
+  # Build job — only on manual trigger (workflow_dispatch) or version tags
+  # to avoid burning private repo minutes on macOS ×10 multiplier.
+  # -------------------------------------------------------------------
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Build with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        run: pyinstaller build/macos.spec
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: pyinstaller build/windows.spec
+
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScoreboardOCR-macOS
+          path: dist/ScoreboardOCR.app
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScoreboardOCR-Windows
+          path: dist/ScoreboardOCR/
