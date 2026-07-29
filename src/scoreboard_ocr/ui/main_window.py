@@ -18,7 +18,6 @@ from ..video import CameraInfo, get_video_inputs
 from ..video.video_thread import VideoThread
 from ..roi import ROIRect
 from ..recognition.worker import OCRWorker
-from ..recognition.trocr_backend import TrOCRRecognizer
 from ..presets import save_preset, load_preset, write_templates
 from ..output import write_value_atomic
 from .debug_panel import DebugPanel
@@ -53,9 +52,7 @@ class MainWindow(QMainWindow):
         self._init_ui()
 
         # --- OCR Worker ---
-        logger.info("Using TrOCR backend (Microsoft Transformer OCR, 61M params)")
-        backend = TrOCRRecognizer()
-        self.ocr_thread = OCRWorker(recognizer=backend, parent=self)
+        self.ocr_thread = OCRWorker(parent=self)
 
         self.ocr_thread.result_signal.connect(self.on_ocr_result)
         self.ocr_thread.start()

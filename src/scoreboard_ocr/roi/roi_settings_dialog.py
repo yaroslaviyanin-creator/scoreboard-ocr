@@ -34,7 +34,14 @@ class ROISettingsDialog(QDialog):
         self.mode_input = QComboBox()
         self.mode_input.addItems(["Standard", "Time", "Name", "7-segment"])
         self.mode_input.setCurrentText(self.roi.mode)
-        self.mode_input.currentTextChanged.connect(self._apply_live)
+        self.mode_input.currentTextChanged.connect(self._on_mode_changed)
+
+        # Engine (Standard/Time only: light=TrOCR, heavy=PaddleOCR)
+        self.engine_input = QComboBox()
+        self.engine_input.addItems(["light (TrOCR — fast)", "heavy (PaddleOCR — accurate)"])
+        engine = self.roi.params.get("engine", "light")
+        self.engine_input.setCurrentIndex(0 if engine == "light" else 1)
+        self.engine_input.currentTextChanged.connect(self._apply_live)
 
         # Sliders
         self.sld_blur = self._make_slider(1, 21, self.roi.params.get("blur", 5))
@@ -45,6 +52,7 @@ class ROISettingsDialog(QDialog):
 
         form.addRow("Name (output file):", self.name_input)
         form.addRow("Mode:", self.mode_input)
+        form.addRow("Engine:", self.engine_input)
         form.addRow("Blur (LED):", self.sld_blur)
         form.addRow("Threshold:", self.sld_thresh)
         form.addRow("Dilate (sticking):", self.sld_morph)
@@ -98,7 +106,14 @@ class ROISettingsDialog(QDialog):
         self.roi.params["morph"] = self.sld_morph.value()
         self.roi.params["sens"] = self.sld_sens.value()
         self.roi.params["tilt"] = self.sld_tilt.value()
+        engine_text = self.engine_input.currentText()
+        self.roi.params["engine"] = "light" if "light" in engine_text else "heavy"
         self.roi.update_label()
+
+    def _on_mode_changed(self, mode: str) -> None:
+        """Show/hide engine selector based on mode."""
+        self.engine_input.setEnabled(mode != "Name")
+        self._apply_live()
 
     def _on_learn_click(self) -> None:
         """Request the main window to capture a template for this ROI."""

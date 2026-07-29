@@ -1,4 +1,8 @@
-"""TrOCR backend — Microsoft's Transformer-based OCR (tiny, accurate, no preprocessing)."""
+"""TrOCR backend — Microsoft's Transformer-based OCR (tiny, accurate, no preprocessing).
+
+Name mode → Tesseract rus+eng (battle-tested for text).
+Standard/Time → TrOCR digit recognition (fast, lightweight).
+"""
 
 import logging
 import cv2
@@ -18,26 +22,27 @@ def _init_model():
     if _processor is None:
         logger.info("Loading TrOCR model: %s (this happens once)...", _MODEL_NAME)
         from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-        # use_fast=False avoids the sentencepiece→tokenizers conversion issue in transformers v5
         _processor = TrOCRProcessor.from_pretrained(_MODEL_NAME, use_fast=False)
         _model = VisionEncoderDecoderModel.from_pretrained(_MODEL_NAME)
-        logger.info("TrOCR model loaded")
+        logger.info("TrOCR model loaded (61M params)")
 
 
 class TrOCRRecognizer(Recognizer):
-    """TrOCR — Microsoft's Transformer OCR. No binarization, just raw image in."""
+    """TrOCR — Microsoft's Transformer OCR for digits. Name mode → Tesseract rus+eng."""
 
     def __init__(self):
         _init_model()
 
     def recognize(self, crop: np.ndarray, mode: str, params: dict) -> RecognitionResult:
+        # Name mode → Tesseract rus+eng (battle-tested for text recognition)
+        if mode == "Name":
+            from .tesseract_backend import TesseractRecognizer
+            return TesseractRecognizer().recognize(crop, mode, params)
+
+        # Standard / Time / 7-segment → TrOCR (light, fast)
         try:
             raw_text = _run_trocr(crop)
-            if mode in ("Standard", "Time", "7-segment"):
-                return self._recognize_digits(raw_text, crop, mode)
-            else:
-                text = raw_text.strip()
-                return RecognitionResult(text=text, debug_image=self._debug_img(crop, text))
+            return self._recognize_digits(raw_text, crop, mode)
         except Exception as e:
             logger.exception("TrOCR failed (mode=%s): %s", mode, e)
             return RecognitionResult(text="", debug_image=crop)

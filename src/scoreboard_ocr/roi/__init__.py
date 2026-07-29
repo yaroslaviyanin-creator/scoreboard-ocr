@@ -26,6 +26,7 @@ class ROIRect(QGraphicsRectItem):
             "morph": 1,
             "sens": 35,
             "tilt": 0,
+            "engine": "light",  # "light" = TrOCR, "heavy" = PaddleOCR
         }
 
         self.setAcceptHoverEvents(True)
