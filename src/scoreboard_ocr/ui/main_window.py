@@ -18,9 +18,7 @@ from ..video import CameraInfo, get_video_inputs
 from ..video.video_thread import VideoThread
 from ..roi import ROIRect
 from ..recognition.worker import OCRWorker
-from ..recognition.template_backend import TemplateSegmentRecognizer
-from ..recognition.tesseract_backend import TesseractRecognizer
-from ..recognition.easyocr_backend import EasyOCRRecognizer
+from ..recognition.paddleocr_backend import PaddleOCRRecognizer
 from ..presets import save_preset, load_preset, write_templates
 from ..output import write_value_atomic
 from .debug_panel import DebugPanel
@@ -55,23 +53,14 @@ class MainWindow(QMainWindow):
         self._init_ui()
 
         # --- OCR Worker ---
-        # Use EasyOCR as primary backend (much better digit accuracy than Tesseract).
-        # Fallback to TemplateSegmentRecognizer if EasyOCR fails to load.
-        try:
-            from ..recognition.easyocr_backend import EasyOCRRecognizer
-            backend = EasyOCRRecognizer()
-            logger.info("Using EasyOCR backend for recognition")
-        except Exception as e:
-            logger.warning("EasyOCR unavailable, falling back to Tesseract: %s", e)
-            tesseract_path = find_tesseract()
-            if tesseract_path:
-                backend = TemplateSegmentRecognizer()
-            else:
-                logger.error("No OCR backend available")
-                backend = TemplateSegmentRecognizer()
-
+        logger.info("Using PaddleOCR backend")
+        backend = PaddleOCRRecognizer()
         self.ocr_thread = OCRWorker(recognizer=backend, parent=self)
 
+        self.ocr_thread.result_signal.connect(self.on_ocr_result)
+        self.ocr_thread.start()
+
+        # --- Video Thread ---
         self.vid_thread = VideoThread(parent=self)
         self.vid_thread.change_pixmap_signal.connect(self.update_image)
 
@@ -188,12 +177,6 @@ class MainWindow(QMainWindow):
         if not self.is_camera_running:
             idx = self.cam_sel.currentData()
             if idx is not None:
-                # macOS AVFoundation needs a fresh VideoCapture after release().
-                # Create a new VideoThread each time.
-                self.vid_thread.stop()
-                self.vid_thread.change_pixmap_signal.disconnect()
-                self.vid_thread = VideoThread(parent=self)
-                self.vid_thread.change_pixmap_signal.connect(self.update_image)
                 self.vid_thread.camera_index = idx
                 self.vid_thread.start()
                 self.btn_start.setText("Stop")
@@ -407,20 +390,20 @@ class MainWindow(QMainWindow):
             d = results.get(z_id, {"text": "", "name": "???"})
             val = d["text"]
             name = d["name"]
-            logger.debug("on_ocr_result: zone=%s val=%s", name, repr(val))
 
-            # Always show current value in debug panel (stabilization still applies to file output)
-            self.debug_panel.update_result(z_id, name, val if val else "...", img)
-
-            # Stabilization: require same value for 2 consecutive cycles before writing to file
+            # Stabilization: require same value for 2 consecutive cycles
             history = self.roi_history.setdefault(z_id, [])
             history.append(val)
             if len(history) > 2:
                 history.pop(0)
             is_stable = (len(history) == 2 and history[0] == history[1] and val != "")
 
+            # Show last stable value to avoid flickering
+            display_val = self.last_stable_values.get(z_id, val) if not is_stable else val
             if is_stable:
                 self.last_stable_values[z_id] = val
+
+            self.debug_panel.update_result(z_id, name, display_val, img)
 
             # Write to output file when stable
             if self.output_folder and is_stable:
