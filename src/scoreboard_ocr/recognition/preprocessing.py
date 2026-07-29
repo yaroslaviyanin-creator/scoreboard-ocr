@@ -146,9 +146,6 @@ def preprocess_name_crop(
     Returns:
         (tesseract_ready_image, debug_color_image)
     """
-    # Build debug image from original
-    debug_img = img_bgr.copy()
-
     # Scale up small crops
     h, w = img_bgr.shape[:2]
     scale = max(1.0, target_height / h) if h < target_height else 1.0
@@ -202,7 +199,9 @@ def preprocess_name_crop(
         100 * white_pct, padded.shape[1], padded.shape[0],
     )
 
-    return padded, debug_img
+    # Debug image: show binary result (ЧБ) so user can see what Tesseract gets
+    debug_binary = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+    return padded, debug_binary
 
 
 def auto_calibrate_threshold(
