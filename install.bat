@@ -1,250 +1,265 @@
 @echo off
-setlocal enabledelayedexpansion
 title Scoreboard OCR Tracker — Installation
+color 0A
 
-:: Colors for console output (Windows 10+)
-:: ============================================================
 echo.
-echo  ========================================================
-echo    Scoreboard OCR Tracker v2
-echo    Windows Installer
-echo  ========================================================
+echo ==========================================================
+echo   Scoreboard OCR Tracker v2  -  Windows Installer
+echo ==========================================================
 echo.
-echo  This will install:
-echo    - Python 3.12 (if not found)
-echo    - Git (if not found)
-echo    - All Python packages (PyQt6, PaddleOCR, OpenCV, etc.)
-echo    - Tesseract OCR (for Russian text recognition)
+echo   This script will download and install everything needed.
+echo   Total download: ~2 GB. Time: 5-15 minutes.
 echo.
-echo  Total size: ~2-3 GB
-echo  Time: 5-15 minutes depending on internet speed
-echo.
-echo  Press any key to continue or Ctrl+C to cancel...
+echo   Press any key to start...
 pause >nul
-echo.
+cls
 
-:: ============================================================
-:: Step 1: Python
-:: ============================================================
-echo  [1/6] Checking Python...
-set "PYTHON_EXE="
+:: ==========================================================
+:: WHERE IS PYTHON?
+:: ==========================================================
+echo [1/5] Looking for Python...
+set "PYTHON="
 
-:: Try common locations
-for %%p in (python python3 "C:\Python312\python.exe" "%ProgramFiles%\Python312\python.exe" "%LocalAppData%\Programs\Python\Python312\python.exe") do (
-    if not defined PYTHON_EXE (
-        %%p --version >nul 2>&1 && set "PYTHON_EXE=%%p"
+:: Check PATH first
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    for /f "delims=" %%i in ('where python 2^>nul') do set "PYTHON=%%i"
+    goto :found_python
+)
+
+:: Check all common locations
+for %%d in (
+    "%LocalAppData%\Programs\Python\Python313"
+    "%LocalAppData%\Programs\Python\Python312"
+    "%LocalAppData%\Programs\Python\Python311"
+    "%ProgramFiles%\Python313"
+    "%ProgramFiles%\Python312"
+    "%ProgramFiles%\Python311"
+    "C:\Python313"
+    "C:\Python312"
+    "C:\Python311"
+) do (
+    if exist "%%d\python.exe" (
+        set "PYTHON=%%d\python.exe"
+        goto :found_python
     )
 )
 
-if defined PYTHON_EXE (
-    %PYTHON_EXE% --version
-    echo         OK - Python found
-) else (
-    echo         Python not found. Downloading Python 3.12.8...
-    echo         This is a ~25 MB download.
-    curl -L --progress-bar -o "%TEMP%\python312.exe" "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
-    if !errorlevel! neq 0 (
-        echo.
-        echo  ERROR: Cannot download Python. Check your internet connection.
-        echo  Please install Python manually from: https://www.python.org/downloads/
-        echo  Then run this installer again.
-        echo.
-        pause
-        exit /b 1
-    )
-    echo         Installing Python (please wait)...
-    "%TEMP%\python312.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_pip=1
-    if !errorlevel! neq 0 (
-        echo         Python installer failed. Trying user-level install...
-        "%TEMP%\python312.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 Include_pip=1
-    )
-    :: Refresh PATH
-    for /f "tokens=*" %%i in ('where python 2^>nul') do set "PYTHON_EXE=%%i"
-    if not defined PYTHON_EXE (
-        set "PYTHON_EXE=%LocalAppData%\Programs\Python\Python312\python.exe"
-    )
-    echo         Python installed: %PYTHON_EXE%
-)
+:: Python not found - ask user
+echo.
+echo   Python 3.11+ is required but was not found.
+echo.
+echo   Please install Python from:
+echo   https://www.python.org/downloads/
+echo.
+echo   Make sure to check "Add Python to PATH" during install.
+echo   Then run this installer again.
+echo.
+pause
+exit /b 1
+
+:found_python
+echo   Found: %PYTHON%
+%PYTHON% --version
+echo   OK
 echo.
 
-:: ============================================================
-:: Step 2: Git
-:: ============================================================
-echo  [2/6] Checking Git...
-git --version >nul 2>&1
-if !errorlevel! neq 0 (
-    echo         Git not found. Downloading...
-    curl -L --progress-bar -o "%TEMP%\git-installer.exe" "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/Git-2.47.1.2-64-bit.exe"
-    if !errorlevel! neq 0 (
-        echo  WARNING: Cannot download Git. Trying to continue without it...
-        echo  If installation fails, install Git from: https://git-scm.com/download/win
-    ) else (
-        echo         Installing Git silently...
-        "%TEMP%\git-installer.exe" /VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
-        echo         Git installed. Please restart this script if PATH is not updated.
-    )
-) else (
-    git --version
-    echo         OK
-)
-echo.
-
-:: ============================================================
-:: Step 3: Clone repository
-:: ============================================================
-echo  [3/6] Downloading Scoreboard OCR source code...
+:: ==========================================================
+:: GET SOURCE CODE
+:: ==========================================================
+echo [2/5] Getting source code...
 set "INSTALL_DIR=%USERPROFILE%\ScoreboardOCR"
 
-if exist "%INSTALL_DIR%\.git" (
-    echo         Updating existing installation...
-    cd /d "%INSTALL_DIR%"
-    git pull 2>nul
-    if !errorlevel! neq 0 (
-        echo         Pull failed, using existing files...
-    ) else (
-        echo         Updated to latest version.
-    )
-) else (
+:: Check if git is available
+where git >nul 2>&1
+if %errorlevel% equ 0 (
+    echo   Using Git...
     if exist "%INSTALL_DIR%" (
-        echo         Removing old installation folder...
-        rmdir /s /q "%INSTALL_DIR%" 2>nul
+        echo   Updating existing installation...
+        cd /d "%INSTALL_DIR%"
+        git pull 2>nul
+        if %errorlevel% neq 0 (
+            echo   Pull failed - will re-clone...
+            cd /d "%USERPROFILE%"
+            rmdir /s /q "%INSTALL_DIR%" 2>nul
+            git clone https://github.com/yaroslaviyanin-creator/scoreboard-ocr.git "%INSTALL_DIR%"
+        )
+    ) else (
+        echo   Cloning from GitHub...
+        git clone https://github.com/yaroslaviyanin-creator/scoreboard-ocr.git "%INSTALL_DIR%"
     )
-    echo         Cloning from GitHub...
-    git clone --depth 1 https://github.com/yaroslaviyanin-creator/scoreboard-ocr.git "%INSTALL_DIR%"
-    if !errorlevel! neq 0 (
-        echo.
-        echo  ERROR: Cannot clone repository. Download manually:
-        echo  https://github.com/yaroslaviyanin-creator/scoreboard-ocr/archive/refs/heads/main.zip
-        echo  Extract to: %INSTALL_DIR%
-        echo.
-        pause
-        exit /b 1
-    )
-)
-cd /d "%INSTALL_DIR%"
-echo         OK - Source code at: %INSTALL_DIR%
-echo.
-
-:: ============================================================
-:: Step 4: Python virtual environment
-:: ============================================================
-echo  [4/6] Creating Python virtual environment...
-cd /d "%INSTALL_DIR%"
-if exist ".venv" (
-    echo         Virtual environment already exists, reusing...
 ) else (
-    %PYTHON_EXE% -m venv .venv
-    if !errorlevel! neq 0 (
-        echo  ERROR: Cannot create virtual environment.
+    echo   Git not found, downloading ZIP...
+    if exist "%INSTALL_DIR%" rmdir /s /q "%INSTALL_DIR%" 2>nul
+    mkdir "%INSTALL_DIR%" 2>nul
+    
+    :: Download main branch as ZIP
+    powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/yaroslaviyanin-creator/scoreboard-ocr/archive/refs/heads/main.zip' -OutFile '%TEMP%\scoreboard-ocr.zip'"
+    if %errorlevel% neq 0 (
+        echo   ERROR: Cannot download source code.
+        echo   Check internet connection.
+        pause
+        exit /b 1
+    )
+    echo   Extracting...
+    powershell -NoProfile -Command "Expand-Archive -Path '%TEMP%\scoreboard-ocr.zip' -DestinationPath '%TEMP%\scoreboard-ocr' -Force"
+    xcopy /E /I /Y "%TEMP%\scoreboard-ocr\scoreboard-ocr-main\*" "%INSTALL_DIR%" >nul
+    if %errorlevel% neq 0 (
+        echo   ERROR: Extract failed.
         pause
         exit /b 1
     )
 )
-echo         OK
+echo   OK - Source at %INSTALL_DIR%
 echo.
 
-:: ============================================================
-:: Step 5: Install Python packages
-:: ============================================================
-echo  [5/6] Installing Python packages...
-echo         This will download ~1 GB and may take 5-10 minutes...
-echo         Progress:
-echo.
+:: ==========================================================
+:: CREATE VENV AND INSTALL DEPENDENCIES
+:: ==========================================================
+echo [3/5] Setting up Python environment...
+cd /d "%INSTALL_DIR%"
+
+if exist ".venv" (
+    echo   Removing old venv...
+    rmdir /s /q ".venv" 2>nul
+)
+
+echo   Creating virtual environment...
+%PYTHON% -m venv .venv
+if %errorlevel% neq 0 (
+    echo   ERROR: Cannot create venv.
+    pause
+    exit /b 1
+)
+
+echo   Activating venv...
 call .venv\Scripts\activate.bat
 
-:: Upgrade pip first
-python -m pip install --upgrade pip --quiet
-
-:: Install core packages one by one with progress
-echo   - PyQt6 (GUI framework)...
-pip install PyQt6 --quiet
-echo   - OpenCV (camera)...
-pip install opencv-python --quiet
-echo   - NumPy (math)...
-pip install numpy --quiet
-echo   - PaddlePaddle + PaddleOCR (AI recognition)...
-pip install paddlepaddle paddleocr --quiet
-echo   - pytesseract (text names)...
-pip install pytesseract --quiet
-echo   - platformdirs (paths)...
-pip install platformdirs --quiet
-echo   - pytest (testing)...
-pip install pytest --quiet
-echo   - pyinstaller (build exe)...
-pip install pyinstaller --quiet
+echo   Upgrading pip...
+python -m pip install --upgrade pip --quiet 2>&1
 
 echo.
-echo         All packages installed.
+echo   Installing packages (~1 GB download)...
+echo   This will take 5-10 minutes...
 echo.
 
-:: ============================================================
-:: Step 6: Tesseract OCR
-:: ============================================================
-echo  [6/6] Setting up Tesseract OCR...
+echo     [1/5] PyQt6...
+pip install PyQt6 --quiet 2>&1
+if %errorlevel% neq 0 (
+    echo     WARNING: PyQt6 install failed
+)
+
+echo     [2/5] OpenCV + NumPy...
+pip install opencv-python numpy --quiet 2>&1
+if %errorlevel% neq 0 (
+    echo     WARNING: OpenCV install failed
+)
+
+echo     [3/5] PaddlePaddle + PaddleOCR (AI models)...
+echo           Downloading AI models, this may take a while...
+pip install paddlepaddle --quiet 2>&1
+pip install paddleocr --quiet 2>&1
+if %errorlevel% neq 0 (
+    echo     WARNING: PaddleOCR install failed
+)
+
+echo     [4/5] Tesseract Python bindings...
+pip install pytesseract platformdirs --quiet 2>&1
+
+echo     [5/5] Additional tools...
+pip install pytest --quiet 2>&1
+
+echo.
+echo   All packages installed.
+echo.
+
+:: ==========================================================
+:: TESSERACT OCR
+:: ==========================================================
+echo [4/5] Setting up Tesseract OCR...
 set "TESS_DIR=%INSTALL_DIR%\Tesseract-OCR"
 
 if exist "%TESS_DIR%\tesseract.exe" (
-    echo         Tesseract already installed.
+    echo   Already installed.
 ) else (
-    echo         Downloading Tesseract (~50 MB)...
-    curl -L --progress-bar -o "%TEMP%\tesseract-installer.exe" "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
-    if !errorlevel! neq 0 (
-        echo         WARNING: Tesseract download failed.
-        echo         Russian name recognition will need manual Tesseract install.
-        echo         Download from: https://github.com/UB-Mannheim/tesseract/wiki
-    ) else (
-        echo         Installing Tesseract to project folder...
-        "%TEMP%\tesseract-installer.exe" /VERYSILENT /NORESTART /DIR="%TESS_DIR%"
-        if exist "%TESS_DIR%\tesseract.exe" (
-            echo         OK - Tesseract installed.
-        ) else (
-            echo         WARNING: Tesseract install may have failed silently.
-            echo         Trying to copy from system installation...
-            if exist "%ProgramFiles%\Tesseract-OCR\tesseract.exe" (
-                xcopy /E /I /Y "%ProgramFiles%\Tesseract-OCR" "%TESS_DIR%" >nul
-                echo         OK - Copied from system.
-            )
+    echo   Trying to find Tesseract on system...
+    
+    :: Check common Windows install locations
+    set "TESS_FOUND="
+    for %%d in (
+        "%ProgramFiles%\Tesseract-OCR"
+        "%ProgramFiles(x86)%\Tesseract-OCR"
+        "%LocalAppData%\Tesseract-OCR"
+    ) do (
+        if exist "%%d\tesseract.exe" (
+            echo   Found at %%d
+            echo   Copying to project folder...
+            xcopy /E /I /Y "%%d" "%TESS_DIR%" >nul
+            set "TESS_FOUND=1"
         )
     )
+    
+    if not defined TESS_FOUND (
+        echo.
+        echo   Tesseract OCR not found on this PC.
+        echo   Name mode (Russian text) will use fallback.
+        echo.
+        echo   To install Tesseract later:
+        echo   https://github.com/UB-Mannheim/tesseract/wiki
+        echo   Install to: %TESS_DIR%
+        echo.
+    )
 )
+echo   OK
 echo.
 
-:: ============================================================
-:: Create launcher
-:: ============================================================
-echo  Creating desktop shortcut...
+:: ==========================================================
+:: CREATE SHORTCUT
+:: ==========================================================
+echo [5/5] Creating shortcut...
 
-:: Launcher batch file
+:: Create launcher script
 (
 echo @echo off
+echo title Scoreboard OCR Tracker
 echo cd /d "%INSTALL_DIR%"
 echo call .venv\Scripts\activate.bat
-echo start "" pythonw -m scoreboard_ocr.app
-) > "%INSTALL_DIR%\ScoreboardOCR.bat"
+echo python -m scoreboard_ocr.app
+echo if errorlevel 1 pause
+) > "%INSTALL_DIR%\run_scoreboard.bat"
 
-:: Desktop shortcut via PowerShell
+:: Desktop shortcut
 set "DESKTOP=%USERPROFILE%\Desktop"
-if not exist "%DESKTOP%" set "DESKTOP=%OneDriveConsumer%\Desktop"
-if not exist "%DESKTOP%" set "DESKTOP=%OneDriveCommercial%\Desktop"
+if exist "%USERPROFILE%\OneDrive\Desktop" set "DESKTOP=%USERPROFILE%\OneDrive\Desktop"
 
 if exist "%DESKTOP%" (
-    powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP%\ScoreboardOCR.lnk'); $s.TargetPath = '%INSTALL_DIR%\ScoreboardOCR.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; if (Test-Path '%INSTALL_DIR%\assets\icon.ico') { $s.IconLocation = '%INSTALL_DIR%\assets\icon.ico' }; $s.Save()"
-    echo         Desktop shortcut created: ScoreboardOCR
+    powershell -NoProfile -Command ^
+        "$ws = New-Object -ComObject WScript.Shell; ^
+         $sc = $ws.CreateShortcut('%DESKTOP%\ScoreboardOCR.lnk'); ^
+         $sc.TargetPath = '%SystemRoot%\System32\cmd.exe'; ^
+         $sc.Arguments = '/c \"%INSTALL_DIR%\run_scoreboard.bat\"'; ^
+         $sc.WorkingDirectory = '%INSTALL_DIR%'; ^
+         $sc.Description = 'Scoreboard OCR Tracker v2'; ^
+         if (Test-Path '%INSTALL_DIR%\assets\icon.ico') { $sc.IconLocation = '%INSTALL_DIR%\assets\icon.ico' }; ^
+         $sc.Save()"
+    echo   Desktop shortcut created: ScoreboardOCR
 ) else (
-    echo         WARNING: Desktop not found. Run from: %INSTALL_DIR%\ScoreboardOCR.bat
+    echo   Desktop not found. Run from: %INSTALL_DIR%\run_scoreboard.bat
 )
+echo   OK
 echo.
 
-:: ============================================================
-:: Done
-:: ============================================================
-echo  ========================================================
-echo    INSTALLATION COMPLETE!
-echo  ========================================================
+:: ==========================================================
+:: DONE
+:: ==========================================================
+echo ==========================================================
+echo   INSTALLATION COMPLETE!
+echo ==========================================================
 echo.
-echo    Launch: Double-click ScoreboardOCR on your desktop
-echo    Or run: %INSTALL_DIR%\ScoreboardOCR.bat
+echo   To launch: Double-click ScoreboardOCR on Desktop
+echo   Or run: %INSTALL_DIR%\run_scoreboard.bat
 echo.
-echo    To update: run this installer again
+echo   To update: run this installer again.
 echo.
-pause
+echo   Press any key to exit...
+pause >nul
